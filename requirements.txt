@@ -1,0 +1,13 @@
+numpy
+pandas
+matplotlib
+scipy
+scikit-learn
+scikit-fuzzy
+scikit-image
+scikit-learn
+fastapi
+uvicorn
+python-multipart
+pydantic
+soundfile
