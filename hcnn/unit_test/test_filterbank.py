@@ -39,8 +39,22 @@ class TestFilterbank(unittest.TestCase):
         plt.grid(True)
         plt.xscale('log')
         plt.xlim(0, 8000)
+        plt.show()
         
-        # Save the plot
-        plt.savefig('filterbank_visualization.png')
-        plt.close()
-        
+    def test_feature_extractor(self):
+        t = 10
+        time = torch.linspace(0, t, t*self.config.sample_rate)
+        x = torch.sin( time * 2 * torch.pi * 440)[None,:]
+        spec = self.extractor(x)
+        center_freqs = self.extractor.center_freqs.detach().numpy()
+        spec_np = spec.detach().numpy()
+        t_win = np.arange(spec.shape[2]) * self.config.hop_length / self.config.sample_rate
+        # Plot each filter
+        plt.figure(figsize=(12, 6))
+        plt.imshow(spec_np[0, :, :], aspect='auto', origin='lower')
+        plt.yticks(np.arange(0, center_freqs.shape[0], 10), np.round(center_freqs[::10], 1))
+        plt.xticks(np.arange(0, t_win.shape[0], 100), np.round(t_win[::100], 1))
+        plt.ylabel('Frequency (Hz)')
+        plt.xlabel('Time (s)')
+        plt.show()      
+

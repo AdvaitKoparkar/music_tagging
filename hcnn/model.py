@@ -39,7 +39,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
 
         # spectrum extractor
         self.preprocessor = torch.nn.ModuleList([
-            torchaudio.transforms.Vol(gain=0.0, gain_type='amplitude'),
+            torchaudio.transforms.Vol(gain=1.0, gain_type='amplitude'),
             LengthNormalizer(config.target_length, config.sample_rate),
             torchaudio.transforms.Spectrogram(
                 n_fft = config.n_fft,
@@ -68,7 +68,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         self.bw = torch.nn.Parameter(bw[None, :])
 
         # setup fbins
-        self.fft_bins = torch.linspace(0, self.config.sample_rate//2, self.config.n_fft)[:, None]
+        self.fft_bins = torch.linspace(0, self.config.sample_rate/2, self.config.n_fft//2+1)[:, None]
 
     def _midi_to_hz(self, midi_scale: torch.Tensor) -> torch.Tensor:
         return 2 ** ((midi_scale - 69) / 12) * 440
@@ -86,11 +86,15 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         return tri
 
     def forward(self, x : torch.Tensor ) -> torch.Tensor:
-        # <N_batch, N_tsample> -> <N_batch, N_fft, N_twindow>
+        # <N_batch, N_tsample> -> <N_batch, n_fft, n_timesteps>
         spec = self.preprocess(x)
 
-        # build filterbank
+        # build filterbank (after transpose, <1, n_fft, num_filters>)
         filterbank = self.build_filterbank()
 
-
+        # apply filterbank
+        spec = torch.matmul(spec.transpose(-1,-2), filterbank).transpose(-1,-2)
+        spec = torch.log10(torch.abs(spec))
+        # spec : <N_batch, num_filters, n_timesteps
+        return spec
         
