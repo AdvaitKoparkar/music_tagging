@@ -3,19 +3,6 @@ import librosa
 import torchaudio
 from dataclasses import dataclass
 
-class LengthNormalizer(torch.nn.Module):
-    def __init__(self, target_length: float, sample_rate: int):
-        super().__init__()
-        self.target_samples = int(target_length * sample_rate)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.shape[-1] > self.target_samples:
-            x = x[..., :self.target_samples]
-        elif x.shape[-1] < self.target_samples:
-            pad_length = self.target_samples - x.shape[-1]
-            x = torch.nn.functional.pad(x, (0, pad_length))
-        return x
-
 @dataclass
 class HarmonicFeatureExtractorConfig:
     sample_rate : int = 16000
@@ -31,6 +18,19 @@ class HarmonicFeatureExtractorConfig:
     lowest_note : str = 'C1'
     erb_alpha : float = 0.1079
     erp_beta : float = 24.7
+
+class LengthNormalizer(torch.nn.Module):
+    def __init__(self, target_length: float, sample_rate: int):
+        super().__init__()
+        self.target_samples = int(target_length * sample_rate)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[-1] > self.target_samples:
+            x = x[..., :self.target_samples]
+        elif x.shape[-1] < self.target_samples:
+            pad_length = self.target_samples - x.shape[-1]
+            x = torch.nn.functional.pad(x, (0, pad_length))
+        return x
 
 class HarmonicFeatureExtractor(torch.nn.Module):
     def __init__(self, config : HarmonicFeatureExtractorConfig):
@@ -48,7 +48,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
                 pad = config.pad,
                 power = config.power,
                 normalized = config.normalized,                
-            )
+            ),
         ])
 
         # filterbank center frequencies
@@ -57,13 +57,18 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         num_filters = int(high_midi - low_midi) * self.config.n_filters_per_semitone
         midi_scale = torch.linspace(low_midi, high_midi, num_filters+1)[:-1]
         center_freqs = self._midi_to_hz(midi_scale)
-        harmomic_filterbank = torch.zeros(self.config.n_harmonics, num_filters)
+        center_freqs_harmonic = torch.zeros(self.config.n_harmonics, num_filters)
         for i in range(self.config.n_harmonics):
-            harmomic_filterbank[i] = (i+1) * center_freqs
-        self.register_buffer('harmonic_filterbank', harmomic_filterbank)
+            center_freqs_harmonic[i] = (i+1) * center_freqs
+        self.register_buffer('center_freqs_harmonic', center_freqs_harmonic)
+        self.register_buffer('center_freqs', center_freqs)
         
         # learnable bandwidth for each filter
-        self.bw_Q = torch.nn.Parameter(torch.ones(1, num_filters, dtype=torch.float32))
+        bw = self.config.erb_alpha * center_freqs + self.config.erp_beta
+        self.bw = torch.nn.Parameter(bw[None, :])
+
+        # setup fbins
+        self.fft_bins = torch.linspace(0, self.config.sample_rate//2, self.config.n_fft)[:, None]
 
     def _midi_to_hz(self, midi_scale: torch.Tensor) -> torch.Tensor:
         return 2 ** ((midi_scale - 69) / 12) * 440
@@ -72,3 +77,20 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         for transform in self.preprocessor:
             x = transform(x)
         return x
+    
+    def build_filterbank(self, ) -> torch.Tensor :
+        slope1 = self.fft_bins @ (2.0/self.bw) + 1.0 - (2.0 * self.center_freqs/self.bw)
+        slope2 = self.fft_bins @ (-2.0/self.bw) + 1.0 + (2.0 * self.center_freqs/self.bw)
+        tri = torch.minimum(slope1, slope2)
+        tri = torch.clip(tri, 0.0)
+        return tri
+
+    def forward(self, x : torch.Tensor ) -> torch.Tensor:
+        # <N_batch, N_tsample> -> <N_batch, N_fft, N_twindow>
+        spec = self.preprocess(x)
+
+        # build filterbank
+        filterbank = self.build_filterbank()
+
+
+        
