@@ -2,6 +2,7 @@ import torch
 import librosa
 import torchaudio
 from dataclasses import dataclass
+import math
 
 @dataclass
 class HarmonicFeatureExtractorConfig:
@@ -18,6 +19,22 @@ class HarmonicFeatureExtractorConfig:
     lowest_note : str = 'C1'
     erb_alpha : float = 0.1079
     erp_beta : float = 24.7
+
+@dataclass
+class AudioTransformerConfig:
+    d_model: int = 512
+    nhead: int = 8
+    num_layers: int = 4
+    dim_feedforward: int = 2048
+    dropout: float = 0.1
+    num_classes: int = None
+    max_seq_length: int = 1000
+    num_filters: int = None
+
+@dataclass
+class RagaClassifierConfig:
+    fe_config : HarmonicFeatureExtractorConfig = None 
+    be_config : AudioTransformerConfig = None
 
 class LengthNormalizer(torch.nn.Module):
     def __init__(self, target_length: float, sample_rate: int):
@@ -70,6 +87,12 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         # setup fbins
         self.fft_bins = torch.linspace(0, self.config.sample_rate/2, self.config.n_fft//2+1)[:, None]
 
+    @staticmethod
+    def estimate_num_filters(config : HarmonicFeatureExtractorConfig) -> int:
+        low_midi = librosa.note_to_midi(config.lowest_note)
+        high_midi = librosa.hz_to_midi(config.sample_rate / (2 * config.n_harmonics))
+        return int(high_midi - low_midi) * config.n_filters_per_semitone
+
     def _midi_to_hz(self, midi_scale: torch.Tensor) -> torch.Tensor:
         return 2 ** ((midi_scale - 69) / 12) * 440
 
@@ -98,3 +121,86 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         # spec : <N_batch, num_filters, n_timesteps
         return spec
         
+class PositionalEncoding(torch.nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = torch.nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.pe[:x.size(1)]
+        return self.dropout(x)
+
+class AudioTransformer(torch.nn.Module):
+    def __init__(self, config: AudioTransformerConfig):
+        super().__init__()
+        self.config = config
+        
+        if config.num_filters is None:
+            raise ValueError("num_filters must be specified in AudioTransformerConfig")
+        
+        if config.num_classes is None:
+            raise ValueError("num_classes must be specified in AudioTransformerConfig")
+
+        # Positional encoding
+        self.pos_encoder = PositionalEncoding(config.d_model, config.dropout)
+        
+        # Transformer encoder
+        encoder_layer = torch.nn.TransformerEncoderLayer(
+            d_model=config.d_model,
+            nhead=config.nhead,
+            dim_feedforward=config.dim_feedforward,
+            dropout=config.dropout,
+            batch_first=True
+        )
+        self.transformer_encoder = torch.nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=config.num_layers
+        )
+        
+        self.input_projection = torch.nn.Linear(config.num_filters, config.d_model)
+        self.classifier = torch.nn.Sequential(
+            torch.nn.Linear(config.d_model, config.d_model // 2),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(config.dropout),
+            torch.nn.Linear(config.d_model // 2, config.num_classes)
+        )
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x shape: (batch_size, num_filters, num_timewindows)        
+        # Reshape and project input
+        batch_size, num_filters, num_timewindows = x.shape
+        x = x.permute(0, 2, 1)  # (batch_size, num_timewindows, num_filters)
+        x = self.input_projection(x)  # (batch_size, num_timewindows, d_model)
+        
+        # Add positional encoding
+        x = self.pos_encoder(x)
+        
+        # Apply transformer
+        x = self.transformer_encoder(x)
+        
+        # Global average pooling and classification
+        x = x.mean(dim=1)  # (batch_size, d_model)
+        x = self.classifier(x)  # (batch_size, num_classes)
+        
+        return x
+    
+class RagaClassifier(torch.nn.Module):
+    def __init__(self, config : RagaClassifierConfig):
+        super().__init__()
+        self.config = config
+        
+        self.front_end = HarmonicFeatureExtractor(config.fe_config)
+        self.back_end = AudioTransformer(config.be_config)
+        
+    def forward(self, x : torch.Tensor) -> torch.Tensor :
+        x = self.front_end(x)
+        x = self.back_end(x)
+        return x
+    

@@ -38,7 +38,7 @@ class TestFilterbank(unittest.TestCase):
         plt.legend()
         plt.grid(True)
         plt.xscale('log')
-        plt.xlim(0, 8000)
+        plt.xlim(20, 8000)
         plt.show()
         
     def test_feature_extractor(self):
