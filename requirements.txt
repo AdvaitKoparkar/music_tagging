@@ -13,3 +13,5 @@ pydantic
 soundfile
 librosa
 kagglehub
+ipython
+matplotlib
