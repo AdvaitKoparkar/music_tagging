@@ -66,6 +66,9 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
     def get_label_name(self, label_idx):
         return self.idx_to_label[label_idx]
     
+    def get_label_names(self):
+        return list(self.idx_to_label.values())
+
     def get_num_classes(self):
         return len(self.label_to_idx)
     
