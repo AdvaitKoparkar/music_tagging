@@ -117,6 +117,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
 
         # apply filterbank
         spec = torch.matmul(spec.transpose(-1,-2), filterbank).transpose(-1,-2)
+        spec = torch.clip(spec, 1e-12)
         spec = torch.log10(torch.abs(spec))
         # spec : <N_batch, num_filters, n_timesteps
         return spec
