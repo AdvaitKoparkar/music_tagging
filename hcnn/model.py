@@ -122,9 +122,8 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         return spec
         
 class PositionalEncoding(torch.nn.Module):
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+    def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
-        self.dropout = torch.nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
@@ -135,7 +134,7 @@ class PositionalEncoding(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.pe[:x.size(1)]
-        return self.dropout(x)
+        return x
 
 class AudioTransformer(torch.nn.Module):
     def __init__(self, config: AudioTransformerConfig):
@@ -149,7 +148,7 @@ class AudioTransformer(torch.nn.Module):
             raise ValueError("num_classes must be specified in AudioTransformerConfig")
 
         # Positional encoding
-        self.pos_encoder = PositionalEncoding(config.d_model, config.dropout)
+        self.pos_encoder = PositionalEncoding(config.d_model)
         
         # Transformer encoder
         encoder_layer = torch.nn.TransformerEncoderLayer(

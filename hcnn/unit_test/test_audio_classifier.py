@@ -70,36 +70,3 @@ class TestRagaClassifier(unittest.TestCase):
         # Check output shape
         self.assertEqual(output.shape, (batch_size, self.be_config.num_classes))
         
-    # def test_invalid_configs(self):
-    #     # Test with missing front-end config
-    #     with self.assertRaises(ValueError):
-    #         invalid_config = RagaClassifierConfig(
-    #             fe_config=None,
-    #             be_config=self.be_config
-    #         )
-    #         RagaClassifier(invalid_config)
-            
-    #     # Test with missing back-end config
-    #     with self.assertRaises(ValueError):
-    #         invalid_config = RagaClassifierConfig(
-    #             fe_config=self.fe_config,
-    #             be_config=None
-    #         )
-    #         RagaClassifier(invalid_config)
-            
-    #     # Test with mismatched num_filters
-    #     invalid_be_config = AudioTransformerConfig(
-    #         d_model=512,
-    #         nhead=8,
-    #         num_layers=4,
-    #         dim_feedforward=2048,
-    #         dropout=0.1,
-    #         num_classes=10,
-    #         num_filters=self.num_filters + 10  # Mismatched number of filters
-    #     )
-    #     with self.assertRaises(ValueError):
-    #         invalid_config = RagaClassifierConfig(
-    #             fe_config=self.fe_config,
-    #             be_config=invalid_be_config
-    #         )
-    #         RagaClassifier(invalid_config)
