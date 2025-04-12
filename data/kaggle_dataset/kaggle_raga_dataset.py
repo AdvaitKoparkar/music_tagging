@@ -1,6 +1,5 @@
 import os
 import math
-import random
 import torch
 import torchaudio
 
@@ -55,8 +54,8 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
             padding = self.target_length_samples - total_samples
             waveform = torch.nn.functional.pad(waveform, (0, padding))
         else:
-            # Randomly crop a segment of target length
-            start_idx = random.randint(0, total_samples - self.target_length_samples)
+            # Randomly crop a segment of target length using torch.random
+            start_idx = torch.randint(0, total_samples - self.target_length_samples + 1, (1,)).item()
             waveform = waveform[:, start_idx:start_idx + self.target_length_samples]
             
         # Get the label
@@ -69,3 +68,4 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
     
     def get_num_classes(self):
         return len(self.label_to_idx)
+    
