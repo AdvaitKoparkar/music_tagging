@@ -1,5 +1,6 @@
 .music_tagging_env
 __pycache__
-data
+data/**/*.wav
+.DS*
 
 
