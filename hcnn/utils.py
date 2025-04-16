@@ -192,16 +192,9 @@ def visualize_feature_embeddings(
     labels_np = np.repeat(labels_np, T)
     
     # Apply dimensionality reduction
-    if method.lower() == 'pca':
-        reducer = PCA(n_components=n_components)
-        embeddings = reducer.fit_transform(features_flat)
-        explained_variance = reducer.explained_variance_ratio_
-    elif method.lower() == 'tsne':
-        reducer = TSNE(n_components=n_components, random_state=42)
-        embeddings = reducer.fit_transform(features_flat)
-        explained_variance = None
-    else:
-        raise ValueError(f"Unsupported dimensionality reduction method: {method}")
+    embeddings = dimensionality_reduction(method, features=features_np, 
+                                          n_components=n_components, features_flat=features_flat, 
+                                          random_sate=None)
     
     # Create figure
     fig, ax = plt.subplots(figsize=figsize)
@@ -247,4 +240,24 @@ def visualize_feature_embeddings(
     else:
         plt.show()
         return None
+    
+def dimensionality_reduction(
+        method : str ,
+        features : np.ndarray , 
+        n_components : int ,
+        features_flat : int , 
+        random_sate : int , 
+):
+    if method.lower() == 'pca':
+        reducer = PCA(n_components=n_components)
+        embeddings = reducer.fit_transform(features_flat)
+        explained_variance = reducer.explained_variance_ratio_
+    elif method.lower() == 'tsne':
+        reducer = TSNE(n_components=n_components, random_state=42)
+        embeddings = reducer.fit_transform(features_flat)
+        explained_variance = None
+    else:
+        raise ValueError(f"Unsupported dimensionality reduction method: {method}")
+
+    return embeddings
 
