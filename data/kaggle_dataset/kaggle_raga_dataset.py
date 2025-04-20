@@ -40,6 +40,8 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
         # Load audio file
         audio_path = self.audio_files[idx]
         waveform, sr = torchaudio.load(audio_path)
+        if waveform.ndim > 1:
+            waveform = waveform.mean(dim=0, keepdim=False)
         
         # Resample if necessary
         if sr != self.sample_rate:
@@ -47,7 +49,7 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
             waveform = resampler(waveform)
             
         # Get the total number of samples
-        total_samples = waveform.shape[1]
+        total_samples = waveform.shape[0]
         
         # If the audio is shorter than target length, pad it
         if total_samples < self.target_length_samples:
@@ -56,7 +58,7 @@ class KaggleRagaDataset(torch.utils.data.Dataset):
         else:
             # Randomly crop a segment of target length using torch.random
             start_idx = torch.randint(0, total_samples - self.target_length_samples + 1, (1,)).item()
-            waveform = waveform[:, start_idx:start_idx + self.target_length_samples]
+            waveform = waveform[start_idx:start_idx + self.target_length_samples]
             
         # Get the label
         label = self.labels[idx]

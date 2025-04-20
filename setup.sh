@@ -7,3 +7,4 @@ pip3 install torch torchvision torchaudio
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 echo "export PYTHONPATH=$PYTHONPATH:$(pwd)" >> .music_tagging_env/bin/activate
 
+wandb login

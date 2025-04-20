@@ -69,8 +69,7 @@ class TestKaggleRagaDataset(unittest.TestCase):
             
             # Check waveform shape and type
             self.assertIsInstance(waveform, torch.Tensor)
-            self.assertEqual(waveform.shape[0], 1)  # mono audio
-            self.assertEqual(waveform.shape[1], int(self.target_length * self.sample_rate))
+            self.assertEqual(waveform.shape[0], int(self.target_length * self.sample_rate))
             
             # Check label type and range
             self.assertIsInstance(label, int)
@@ -87,7 +86,7 @@ class TestKaggleRagaDataset(unittest.TestCase):
         )
         
         waveform, _ = dataset[0]
-        self.assertEqual(waveform.shape[1], int(self.target_length * new_sample_rate))
+        self.assertEqual(waveform.shape[0], int(self.target_length * new_sample_rate))
     
     def test_padding_and_cropping(self):
         """Test that shorter files are padded and longer files are cropped"""
@@ -116,8 +115,8 @@ class TestKaggleRagaDataset(unittest.TestCase):
         
         short_idx = len(dataset) - 2  # Second to last file
         short_waveform, _ = dataset[short_idx]
-        self.assertEqual(short_waveform.shape[1], int(self.target_length * self.sample_rate))
+        self.assertEqual(short_waveform.shape[0], int(self.target_length * self.sample_rate))
         
         long_idx = len(dataset) - 1  # Last file
         long_waveform, _ = dataset[long_idx]
-        self.assertEqual(long_waveform.shape[1], int(self.target_length * self.sample_rate))
+        self.assertEqual(long_waveform.shape[0], int(self.target_length * self.sample_rate))
