@@ -1,7 +1,7 @@
 .music_tagging_env
 __pycache__
+*.wav
 data/**/*.wav
 data/**/*.mp3
 .DS*
-
-
+*yt-dlp_macos
