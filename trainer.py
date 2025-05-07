@@ -161,19 +161,17 @@ if __name__ == '__main__':
     
     # Initialize model configuration
     fe_config = HarmonicFeatureExtractorConfig(
-        sample_rate=16000,
-        n_fft=1024,
-        win_length=1024,
-        hop_length=1024,
-        n_harmonics=4,
+        sample_rate=4000,
+        n_fft=256,
+        hop_length=32,
+        n_harmonics=2,
         n_filters_per_semitone=1,
-        target_length=2.0,
-        lowest_note='C1'
     )
     
     # Initialize dataset and dataloaders
     dataset = TRFDataset(
         root_dir="./data/trf/1/thaat",
+        labels=['Kalyan (thaat)/Bhoopali', 'Todi (thaat)/Multani'],
         sample_rate=fe_config.sample_rate,
     )
     
@@ -205,11 +203,11 @@ if __name__ == '__main__':
     
     # Configure training
     config = TrainingConfig(
-        num_epochs=2,
+        num_epochs=100,
         learning_rate=1e-4,
         early_stopping_patience=10,
         project_name="music-tagging",
-        run_name="hcnn-experiment-1",
+        run_name="hcnn-experiment-thodi-vs-bhoop_exp1",
     )
     
     # Initialize and run trainer

@@ -64,7 +64,7 @@ class TRFDataset(torch.utils.data.Dataset):
         # Get the label
         label = self.labels[idx]
         
-        return waveform[None, ...], label
+        return waveform, label
     
     def get_label_name(self, label_idx):
         return self.idx_to_label[label_idx]
