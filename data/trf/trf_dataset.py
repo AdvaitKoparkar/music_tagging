@@ -5,7 +5,7 @@ import torch
 import torchaudio
 
 class TRFDataset(torch.utils.data.Dataset):
-    def __init__(self, root_dir, target_length_seconds=30.0, sample_rate=44100):
+    def __init__(self, root_dir, labels=None, target_length_seconds=30.0, sample_rate=44100):
         self.root_dir = root_dir
         self.target_length_samples = math.ceil(target_length_seconds * sample_rate)
         self.sample_rate = sample_rate
@@ -16,19 +16,21 @@ class TRFDataset(torch.utils.data.Dataset):
         self.label_to_idx = {}
         
         # Walk through the directory structure
-        for label in os.listdir(root_dir):
-            label_dir = os.path.join(root_dir, label)
-            if not os.path.isdir(label_dir):
-                continue
-                
-            # Add label to mapping if not seen before
-            if label not in self.label_to_idx:
-                self.label_to_idx[label] = len(self.label_to_idx)
+        idx = 0
+        for thaat in os.listdir(root_dir):
+            for raga in os.listdir(os.path.join(root_dir, thaat)):
+                label = f'{thaat}/{raga}'
+                if labels is not None and label not in labels:
+                    continue
 
-            # Add all audio files in this label's directory
-            for file in glob.glob(os.path.join(root_dir, label, '**', '*.mp3')):
-                self.audio_files.append(file)
-                self.labels.append(self.label_to_idx[label])
+                if label not in self.label_to_idx:
+                    self.label_to_idx[label] = idx
+                    idx += 1
+
+                # Add all audio files in this label's directory
+                for file in glob.glob(os.path.join(root_dir, label, '*.mp3')):
+                    self.audio_files.append(file)
+                    self.labels.append(self.label_to_idx[label])
                     
         # Create reverse mapping for label names
         self.idx_to_label = {v: k for k, v in self.label_to_idx.items()}
@@ -62,7 +64,7 @@ class TRFDataset(torch.utils.data.Dataset):
         # Get the label
         label = self.labels[idx]
         
-        return waveform, label
+        return waveform[None, ...], label
     
     def get_label_name(self, label_idx):
         return self.idx_to_label[label_idx]

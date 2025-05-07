@@ -215,8 +215,8 @@ def visualize_feature_embeddings(
     
     # Set labels
     if method.lower() == 'pca':
-        ax.set_xlabel(f'PC1 ({explained_variance[0]*100:.1f}%)')
-        ax.set_ylabel(f'PC2 ({explained_variance[1]*100:.1f}%)')
+        ax.set_xlabel(f'PC1')
+        ax.set_ylabel(f'PC2')
     else:
         ax.set_xlabel('t-SNE 1')
         ax.set_ylabel('t-SNE 2')
