@@ -1,3 +1,4 @@
+import yaml
 import torch
 import librosa
 import torchaudio
@@ -204,3 +205,27 @@ class RagaClassifier(torch.nn.Module):
         x = self.back_end(x)
         return x
     
+def load_checkpoint(model_path : str , config_path : str, device = None ) -> RagaClassifier :
+    '''
+        utility to load HCNN checkpoint
+    '''
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    with open(config_path) as file:
+        config = yaml.safe_load(file)
+
+    fe_config = HarmonicFeatureExtractorConfig(
+        **config['model']['fe_config'],
+    )
+    be_config = AudioTransformerConfig(
+        **config['model']['be_config'],
+    )
+    model_wts = torch.load(model_path, map_location=device)
+    model_config = RagaClassifierConfig(
+        fe_config=fe_config,
+        be_config=be_config,
+    )
+    model = RagaClassifier(model_config)
+    model.load_state_dict(model_wts)
+    return model
