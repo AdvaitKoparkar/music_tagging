@@ -85,7 +85,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         self.bw = torch.nn.Parameter(bw[None, :])
 
         # setup fbins
-        self.fft_bins = torch.linspace(0, self.config.sample_rate/2, self.config.n_fft//2+1)[:, None]
+        self.fft_bins = torch.nn.Parameter(torch.linspace(0, self.config.sample_rate/2, self.config.n_fft//2+1)[:, None])
 
     @staticmethod
     def estimate_num_filters(config : HarmonicFeatureExtractorConfig) -> int:
@@ -113,7 +113,7 @@ class HarmonicFeatureExtractor(torch.nn.Module):
         spec = self.preprocess(x)
 
         # build filterbank (after transpose, <1, n_fft, num_filters>)
-        filterbank = self.build_filterbank()
+        filterbank = self.build_filterbank().to(x.device)
 
         # apply filterbank
         spec = torch.matmul(spec.transpose(-1,-2), filterbank).transpose(-1,-2)

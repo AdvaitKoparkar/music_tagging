@@ -17,7 +17,7 @@ class TrainingConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
     dataloader_config: dict = field(default_factory=lambda: {
-        'batch_size': 64,
+        'batch_size': 4,
         'num_workers': 2,
         'shuffle': True,
     })
@@ -165,13 +165,13 @@ if __name__ == '__main__':
         n_fft=256,
         hop_length=32,
         n_harmonics=2,
-        n_filters_per_semitone=1,
+        n_filters_per_semitone=2,
     )
     
     # Initialize dataset and dataloaders
     dataset = TRFDataset(
         root_dir="./data/trf/1/thaat",
-        labels=['Kalyan (thaat)/Bhoopali', 'Todi (thaat)/Multani'],
+        labels=['Kalyan (thaat)/Bhoopali', 'Todi (thaat)/Gujari Todi', 'Khamaj (thaat)/Desh', 'Bhairavi (thaat)/Bhairavi'],
         sample_rate=fe_config.sample_rate,
     )
     
@@ -179,20 +179,20 @@ if __name__ == '__main__':
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, 
+        dataset,
         [train_size, val_size],
     )
 
     be_config = AudioTransformerConfig(
         d_model=256,
-        nhead=1,
+        nhead=8,
         num_layers=4,
         dim_feedforward=256,
         dropout=0.1,
         num_filters=HarmonicFeatureExtractor.estimate_num_filters(fe_config),
         num_classes=dataset.get_num_classes(),
     )
-
+    
     model_config = RagaClassifierConfig(
         fe_config=fe_config,
         be_config=be_config
@@ -203,11 +203,11 @@ if __name__ == '__main__':
     
     # Configure training
     config = TrainingConfig(
-        num_epochs=100,
+        num_epochs=450,
         learning_rate=1e-4,
-        early_stopping_patience=10,
+        early_stopping_patience=1000,
         project_name="music-tagging",
-        run_name="hcnn-experiment-thodi-vs-bhoop_exp1",
+        run_name="hcnn-experiment-4RagaClf-exp2",
     )
     
     # Initialize and run trainer
