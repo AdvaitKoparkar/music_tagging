@@ -2,11 +2,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 import os
+from collections import Counter
+import yaml
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.metrics import confusion_matrix, classification_report
+import shutil
 
 @dataclass
 class TrainingConfig:
@@ -19,7 +25,7 @@ class TrainingConfig:
     dataloader_config: dict = field(default_factory=lambda: {
         'batch_size': 4,
         'num_workers': 2,
-        'shuffle': True,
+        'shuffle': False,  # Set to False since we're using a sampler
     })
     
     # Logging parameters
@@ -29,18 +35,35 @@ class TrainingConfig:
     run_name: Optional[str] = None
     logpath : str = "./logs"
 
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'TrainingConfig':
+        training_config = config_dict['training']
+        return cls(
+            num_epochs=training_config['num_epochs'],
+            learning_rate=training_config['learning_rate'],
+            early_stopping_patience=training_config['early_stopping_patience'],
+            project_name=training_config['project_name'],
+            run_name=training_config['run_name'],
+            logpath=training_config['logpath'],
+            log_every_n_steps=training_config['log_every_n_steps'],
+            save_every_n_epochs=training_config['save_every_n_epochs'],
+            dataloader_config=training_config['dataloader']
+        )
+
 class Trainer:
     def __init__(
         self,
         model: nn.Module,
         train_dataset : torch.utils.data.Dataset ,
         val_dataset : torch.utils.data.Dataset,
-        config: TrainingConfig
+        config: TrainingConfig,
+        config_dict: Dict[str, Any]  # Add config_dict parameter
     ):
         self.config = config
+        self.config_dict = config_dict  # Store the full config dictionary
         self.model = model.to(config.device)
-        self.train_loader = self._create_dataloader(train_dataset)
-        self.val_loader = self._create_dataloader(val_dataset)
+        self.train_loader = self._create_dataloader(train_dataset, is_train=True)
+        self.val_loader = self._create_dataloader(val_dataset, is_train=False)
         
         # Initialize optimizer and loss function
         self.optimizer = optim.Adam(
@@ -62,17 +85,83 @@ class Trainer:
         self.log_dir = os.path.join(config.logpath, self.run_id)
         os.makedirs(self.log_dir, exist_ok=True)
         
-    def _create_dataloader(self, ds) -> torch.utils.data.DataLoader :
-        dl = torch.utils.data.DataLoader(
-            ds, **self.config.dataloader_config
-        )
+        # Save configuration to log directory
+        self._save_config()
+        
+        # Initialize metrics tracking
+        self.train_losses = []
+        self.val_losses = []
+        self.train_metrics = []
+        self.val_metrics = []
+        
+    def _save_config(self):
+        """Save the configuration YAML file to the log directory."""
+        config_path = os.path.join(self.log_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump(self.config_dict, f, default_flow_style=False, sort_keys=False)
+
+    def _calculate_class_weights(self, dataset):
+        # Get all labels from the dataset
+        labels = [dataset[i][1] for i in range(len(dataset))]
+        # Count occurrences of each class
+        class_counts = Counter(labels)
+        # Calculate weights as inverse of class frequency
+        total_samples = len(labels)
+        class_weights = {cls: total_samples / (len(class_counts) * count) 
+                        for cls, count in class_counts.items()}
+        # Convert to tensor of weights for each sample
+        sample_weights = torch.tensor([class_weights[label] for label in labels])
+        return sample_weights
+
+    def _create_dataloader(self, ds, is_train: bool) -> torch.utils.data.DataLoader:
+        if is_train:
+            # Calculate class weights for training set
+            sample_weights = self._calculate_class_weights(ds)
+            # Create weighted random sampler
+            sampler = torch.utils.data.WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=len(ds),
+                replacement=True
+            )
+            # Create dataloader with sampler
+            dl = torch.utils.data.DataLoader(
+                ds,
+                sampler=sampler,
+                **{k: v for k, v in self.config.dataloader_config.items() if k != 'shuffle'}
+            )
+        else:
+            # For validation, use regular dataloader without sampling
+            dl = torch.utils.data.DataLoader(
+                ds,
+                shuffle=False,
+                **{k: v for k, v in self.config.dataloader_config.items() if k != 'shuffle'}
+            )
         return dl
+
+    def _calculate_metrics(self, outputs: torch.Tensor, targets: torch.Tensor) -> Dict[str, float]:
+        _, predicted = outputs.max(1)
+        correct = predicted.eq(targets).sum().item()
+        total = targets.size(0)
+        accuracy = 100. * correct / total
+        
+        # Calculate per-class metrics
+        report = classification_report(
+            targets.cpu().numpy(),
+            predicted.cpu().numpy(),
+            output_dict=True,
+            zero_division=0
+        )
+        
+        return {
+            'accuracy': accuracy,
+            'per_class_metrics': report
+        }
 
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss = 0
-        correct = 0
-        total = 0
+        all_targets = []
+        all_predictions = []
         
         progress_bar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
         for batch_idx, (inputs, targets) in enumerate(progress_bar):
@@ -89,22 +178,30 @@ class Trainer:
             
             # Calculate metrics
             total_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            all_targets.extend(targets.cpu().numpy())
+            all_predictions.extend(outputs.max(1)[1].cpu().numpy())
                 
             progress_bar.set_postfix({
-                "loss": f"{loss.item():.4f}",
-                "acc": f"{100. * correct / total:.2f}%"
+                "loss": f"{loss.item():.4f}"
             })
-            
-        return total_loss / len(self.train_loader)
+        
+        # Calculate epoch metrics
+        epoch_loss = total_loss / len(self.train_loader)
+        metrics = self._calculate_metrics(
+            torch.tensor(all_predictions).to(self.config.device),
+            torch.tensor(all_targets).to(self.config.device)
+        )
+        
+        self.train_losses.append(epoch_loss)
+        self.train_metrics.append(metrics)
+        
+        return epoch_loss
     
     def validate(self, epoch: int) -> float:
         self.model.eval()
         total_loss = 0
-        correct = 0
-        total = 0
+        all_targets = []
+        all_predictions = []
         
         with torch.no_grad():
             for inputs, targets in self.val_loader:
@@ -113,14 +210,45 @@ class Trainer:
                 loss = self.criterion(outputs, targets)
                 
                 total_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += targets.size(0)
-                correct += predicted.eq(targets).sum().item()
+                all_targets.extend(targets.cpu().numpy())
+                all_predictions.extend(outputs.max(1)[1].cpu().numpy())
         
-        val_loss = total_loss / len(self.val_loader)
-        val_acc = 100. * correct / total
+        # Calculate epoch metrics
+        epoch_loss = total_loss / len(self.val_loader)
+        metrics = self._calculate_metrics(
+            torch.tensor(all_predictions).to(self.config.device),
+            torch.tensor(all_targets).to(self.config.device)
+        )
         
-        return val_loss
+        self.val_losses.append(epoch_loss)
+        self.val_metrics.append(metrics)
+        
+        return epoch_loss
+    
+    def _save_metrics_to_csv(self):
+        # Save training metrics
+        train_df = pd.DataFrame(self.train_metrics)
+        train_df['loss'] = self.train_losses
+        train_df['epoch'] = range(len(train_df))
+        train_df.to_csv(os.path.join(self.log_dir, 'train_metrics.csv'), index=False)
+        
+        # Save validation metrics
+        val_df = pd.DataFrame(self.val_metrics)
+        val_df['loss'] = self.val_losses
+        val_df['epoch'] = range(len(val_df))
+        val_df.to_csv(os.path.join(self.log_dir, 'val_metrics.csv'), index=False)
+    
+    def _plot_losses(self):
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.train_losses, label='Training Loss')
+        plt.plot(self.val_losses, label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training and Validation Losses')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(self.log_dir, 'loss_plot.png'))
+        plt.close()
     
     def train(self):
         for epoch in range(self.config.num_epochs):
@@ -129,6 +257,10 @@ class Trainer:
             
             # Validate
             val_loss = self.validate(epoch)
+            
+            # Save metrics and plot
+            self._save_metrics_to_csv()
+            self._plot_losses()
             
             # Check for early stopping
             if val_loss < self.best_val_loss:
@@ -159,36 +291,31 @@ if __name__ == '__main__':
     from hcnn.model import HarmonicFeatureExtractor, RagaClassifier, RagaClassifierConfig, HarmonicFeatureExtractorConfig, AudioTransformerConfig
     from data.trf.trf_dataset import TRFDataset
     
-    # Initialize model configuration
-    fe_config = HarmonicFeatureExtractorConfig(
-        sample_rate=4000,
-        n_fft=256,
-        hop_length=32,
-        n_harmonics=2,
-        n_filters_per_semitone=2,
-    )
+    # Load configuration from YAML file
+    with open('config.yaml', 'r') as f:
+        config_dict = yaml.safe_load(f)
+    
+    # Initialize model configurations from YAML
+    fe_config = HarmonicFeatureExtractorConfig(**config_dict['feature_extractor'])
     
     # Initialize dataset and dataloaders
     dataset = TRFDataset(
-        root_dir="./data/trf/1/thaat",
-        labels=['Kalyan (thaat)/Bhoopali', 'Todi (thaat)/Gujari Todi', 'Khamaj (thaat)/Desh', 'Bhairavi (thaat)/Bhairavi'],
+        root_dir=config_dict['dataset']['root_dir'],
+        labels=config_dict['dataset']['labels'],
         sample_rate=fe_config.sample_rate,
     )
     
-    # Split dataset into 90% train and 10% validation
-    train_size = int(0.9 * len(dataset))
+    # Split dataset into train and validation
+    train_size = int(config_dict['dataset']['train_val_split'] * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(
         dataset,
         [train_size, val_size],
     )
 
+    # Initialize backend configuration
     be_config = AudioTransformerConfig(
-        d_model=256,
-        nhead=8,
-        num_layers=4,
-        dim_feedforward=256,
-        dropout=0.1,
+        **config_dict['backend'],
         num_filters=HarmonicFeatureExtractor.estimate_num_filters(fe_config),
         num_classes=dataset.get_num_classes(),
     )
@@ -202,20 +329,15 @@ if __name__ == '__main__':
     model = RagaClassifier(config=model_config)
     
     # Configure training
-    config = TrainingConfig(
-        num_epochs=450,
-        learning_rate=1e-4,
-        early_stopping_patience=1000,
-        project_name="music-tagging",
-        run_name="hcnn-experiment-4RagaClf-exp2",
-    )
+    config = TrainingConfig.from_dict(config_dict)
     
     # Initialize and run trainer
     trainer = Trainer(
         model=model,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
-        config=config
+        config=config,
+        config_dict=config_dict
     )
     
     trainer.train()
