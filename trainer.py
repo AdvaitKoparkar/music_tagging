@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.metrics import confusion_matrix, classification_report
 import shutil
+import logging
 
 @dataclass
 class TrainingConfig:
@@ -92,6 +93,9 @@ class Trainer:
         self.log_dir = os.path.join(config.logpath, self.run_id)
         os.makedirs(self.log_dir, exist_ok=True)
         
+        # Set up logging
+        self._setup_logging()
+        
         # Save configuration to log directory
         self._save_config()
         
@@ -101,6 +105,52 @@ class Trainer:
         self.train_metrics = []
         self.val_metrics = []
         
+    def _setup_logging(self):
+        """Set up logging configuration."""
+        log_file = os.path.join(self.log_dir, 'training.log')
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+
+    def _log_training_info(self):
+        """Log important training information."""
+        self.logger.info("=" * 50)
+        self.logger.info("Starting Training")
+        self.logger.info("=" * 50)
+        
+        # Log run information
+        self.logger.info(f"Run ID: {self.run_id}")
+        self.logger.info(f"Device: {self.config.device}")
+        self.logger.info(f"Feature Extractor Frozen: {self.config.freeze_fe}")
+        
+        # Log dataset information
+        self.logger.info("\nDataset Information:")
+        self.logger.info(f"Training samples: {len(self.train_loader.dataset)}")
+        self.logger.info(f"Validation samples: {len(self.val_loader.dataset)}")
+        self.logger.info(f"Batch size: {self.config.dataloader_config['batch_size']}")
+        
+        # Log model information
+        self.logger.info("\nModel Information:")
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.logger.info(f"Total parameters: {total_params:,}")
+        self.logger.info(f"Trainable parameters: {trainable_params:,}")
+        self.logger.info(f"Non-trainable parameters: {total_params - trainable_params:,}")
+        
+        # Log training configuration
+        self.logger.info("\nTraining Configuration:")
+        self.logger.info(f"Number of epochs: {self.config.num_epochs}")
+        self.logger.info(f"Learning rate: {self.config.learning_rate}")
+        self.logger.info(f"Early stopping patience: {self.config.early_stopping_patience}")
+        
+        self.logger.info("=" * 50)
+
     def _save_config(self):
         """Save the configuration YAML file to the log directory."""
         config_path = os.path.join(self.log_dir, 'config.yaml')
@@ -124,12 +174,38 @@ class Trainer:
         if is_train:
             # Calculate class weights for training set
             sample_weights = self._calculate_class_weights(ds)
+            
+            # Log class distribution information
+            labels = [ds[i][1] for i in range(len(ds))]
+            class_counts = Counter(labels)
+            total_samples = len(labels)
+            
+            self.logger.info("\nTraining Dataset Class Distribution:")
+            for cls, count in sorted(class_counts.items()):
+                percentage = (count / total_samples) * 100
+                self.logger.info(f"Class {cls}: {count} samples ({percentage:.1f}%)")
+            
+            # Log sampling weights
+            weight_stats = {
+                'min': sample_weights.min().item(),
+                'max': sample_weights.max().item(),
+                'mean': sample_weights.mean().item(),
+                'std': sample_weights.std().item()
+            }
+            self.logger.info("\nSampling Weight Statistics:")
+            self.logger.info(f"Min weight: {weight_stats['min']:.2f}")
+            self.logger.info(f"Max weight: {weight_stats['max']:.2f}")
+            self.logger.info(f"Mean weight: {weight_stats['mean']:.2f}")
+            self.logger.info(f"Std weight: {weight_stats['std']:.2f}")
+            
             # Create weighted random sampler
             sampler = torch.utils.data.WeightedRandomSampler(
                 weights=sample_weights,
                 num_samples=len(ds),
                 replacement=True
             )
+            self.logger.info("\nUsing WeightedRandomSampler for training")
+            
             # Create dataloader with sampler
             dl = torch.utils.data.DataLoader(
                 ds,
@@ -143,6 +219,14 @@ class Trainer:
                 shuffle=False,
                 **{k: v for k, v in self.config.dataloader_config.items() if k != 'shuffle'}
             )
+            self.logger.info("\nUsing standard DataLoader for validation (no sampling)")
+        
+        # Log dataloader configuration
+        self.logger.info("\nDataLoader Configuration:")
+        self.logger.info(f"Batch size: {self.config.dataloader_config['batch_size']}")
+        self.logger.info(f"Number of workers: {self.config.dataloader_config['num_workers']}")
+        self.logger.info(f"Number of batches: {len(dl)}")
+        
         return dl
 
     def _calculate_metrics(self, outputs: torch.Tensor, targets: torch.Tensor) -> Dict[str, float]:
@@ -258,6 +342,9 @@ class Trainer:
         plt.close()
     
     def train(self):
+        # Log training information before starting
+        self._log_training_info()
+        
         for epoch in range(self.config.num_epochs):
             # Train one epoch
             train_loss = self.train_epoch(epoch)
@@ -276,11 +363,12 @@ class Trainer:
                 # Save best model
                 best_model_path = os.path.join(self.log_dir, "best_model.pth")
                 torch.save(self.model.state_dict(), best_model_path)
+                self.logger.info(f"New best model saved with validation loss: {val_loss:.4f}")
             else:
                 self.early_stopping_counter += 1
                 
             if self.early_stopping_counter >= self.config.early_stopping_patience:
-                print(f"Early stopping triggered after {epoch + 1} epochs")
+                self.logger.info(f"Early stopping triggered after {epoch + 1} epochs")
                 break
                 
             # Save checkpoint periodically
@@ -292,6 +380,7 @@ class Trainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': val_loss,
                 }, checkpoint_path)
+                self.logger.info(f"Checkpoint saved at epoch {epoch + 1}")
 
     def _freeze_feature_extractor(self):
         """Freeze the feature extractor part of the model."""
