@@ -296,7 +296,7 @@ class Trainer:
     def _freeze_feature_extractor(self):
         """Freeze the feature extractor part of the model."""
         # Assuming the feature extractor is the first part of the model
-        for param in self.model.feature_extractor.parameters():
+        for param in self.model.front_end.parameters():
             param.requires_grad = False
         print("Feature extractor has been frozen")
 
@@ -306,7 +306,7 @@ if __name__ == '__main__':
     from data.trf.trf_dataset import TRFDataset
     
     # Load configuration from YAML file
-    with open('config.yaml', 'r') as f:
+    with open('training_config.yaml', 'r') as f:
         config_dict = yaml.safe_load(f)
     
     # Initialize model configurations from YAML

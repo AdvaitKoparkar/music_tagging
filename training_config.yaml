@@ -15,10 +15,10 @@ feature_extractor:
 
 # Backend transformer configuration
 backend:
-  d_model: 256
+  d_model: 64
   nhead: 8
   num_layers: 4
-  dim_feedforward: 256
+  dim_feedforward: 64
   dropout: 0.1
 
 # Training configuration
