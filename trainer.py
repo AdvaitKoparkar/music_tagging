@@ -62,28 +62,6 @@ class Trainer:
         config: TrainingConfig,
         config_dict: Dict[str, Any]
     ):
-        self.config = config
-        self.config_dict = config_dict
-        self.model = model.to(config.device)
-        
-        # Freeze feature extractor if specified
-        if config.freeze_fe:
-            self._freeze_feature_extractor()
-        
-        self.train_loader = self._create_dataloader(train_dataset, is_train=True)
-        self.val_loader = self._create_dataloader(val_dataset, is_train=False)
-        
-        # Initialize optimizer and loss function
-        self.optimizer = optim.Adam(
-            self.model.parameters(),
-            lr=config.learning_rate,
-        )
-        self.criterion = nn.CrossEntropyLoss()
-        
-        # Track best validation loss for early stopping
-        self.best_val_loss = float('inf')
-        self.early_stopping_counter = 0
-
         # Create run_id based on date and time
         self.run_id = datetime.now().strftime("%y%m%d-%H%M%S")
         if config.run_name:
@@ -93,11 +71,44 @@ class Trainer:
         self.log_dir = os.path.join(config.logpath, self.run_id)
         os.makedirs(self.log_dir, exist_ok=True)
         
-        # Set up logging
+        # Set up logging first
         self._setup_logging()
+        self.logger.info("=" * 50)
+        self.logger.info("Initializing Trainer")
+        self.logger.info("=" * 50)
+        
+        self.config = config
+        self.config_dict = config_dict
+        self.logger.info(f"Configuration loaded for run: {self.run_id}")
+        
+        # Move model to device
+        self.model = model.to(config.device)
+        self.logger.info(f"Model moved to device: {config.device}")
+        
+        # Freeze feature extractor if specified
+        if config.freeze_fe:
+            self._freeze_feature_extractor()
+        
+        # Create dataloaders
+        self.logger.info("Creating dataloaders...")
+        self.train_loader = self._create_dataloader(train_dataset, is_train=True)
+        self.val_loader = self._create_dataloader(val_dataset, is_train=False)
+        
+        # Initialize optimizer and loss function
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=config.learning_rate,
+        )
+        self.criterion = nn.CrossEntropyLoss()
+        self.logger.info(f"Optimizer initialized with learning rate: {config.learning_rate}")
+        
+        # Track best validation loss for early stopping
+        self.best_val_loss = float('inf')
+        self.early_stopping_counter = 0
         
         # Save configuration to log directory
         self._save_config()
+        self.logger.info("Configuration saved to log directory")
         
         # Initialize metrics tracking
         self.train_losses = []
@@ -105,6 +116,9 @@ class Trainer:
         self.train_metrics = []
         self.val_metrics = []
         
+        self.logger.info("Trainer initialization complete")
+        self.logger.info("=" * 50)
+
     def _setup_logging(self):
         """Set up logging configuration."""
         log_file = os.path.join(self.log_dir, 'training.log')
