@@ -13,24 +13,27 @@ class TRFDataset(torch.utils.data.Dataset):
         # Get all audio files and their corresponding labels
         self.audio_files = []
         self.labels = []
-        self.label_to_idx = {}
+        self.label_to_idx = {'unknown': 0}  # Initialize with unknown class
         
         # Walk through the directory structure
-        idx = 0
+        idx = 1
         for thaat in os.listdir(root_dir):
             for raga in os.listdir(os.path.join(root_dir, thaat)):
                 label = f'{thaat}/{raga}'
+                
+                # If label is not in specified labels, assign it to unknown class
                 if labels is not None and label not in labels:
-                    continue
-
-                if label not in self.label_to_idx:
-                    self.label_to_idx[label] = idx
-                    idx += 1
+                    label_idx = 0  # Use unknown class
+                else:
+                    if label not in self.label_to_idx:
+                        self.label_to_idx[label] = idx
+                        idx += 1
+                    label_idx = self.label_to_idx[label]
 
                 # Add all audio files in this label's directory
                 for file in glob.glob(os.path.join(root_dir, label, '*.mp3')):
                     self.audio_files.append(file)
-                    self.labels.append(self.label_to_idx[label])
+                    self.labels.append(label_idx)
                     
         # Create reverse mapping for label names
         self.idx_to_label = {v: k for k, v in self.label_to_idx.items()}
