@@ -3,9 +3,6 @@ dataset:
   root_dir: "./data/trf/1/thaat"
   labels:
     - "Kalyan (thaat)/Bhoopali"
-    - "Todi (thaat)/Gujari Todi"
-    - "Khamaj (thaat)/Desh"
-    - "Bhairavi (thaat)/Bhairavi"
   train_val_split: 0.9
 
 # Feature extractor configuration
@@ -30,11 +27,12 @@ training:
   learning_rate: 1e-4
   early_stopping_patience: 1000
   project_name: "music-tagging"
-  run_name: "hcnn-experiment-4RagaClf-exp2"
+  run_name: "hcnn-experiment-Bhoopali"
   logpath: "./logs"
   log_every_n_steps: 10
-  save_every_n_epochs: 1
+  save_every_n_epochs: 10
+  freeze_fe: true
   dataloader:
     batch_size: 4
     num_workers: 2
-    shuffle: false 
+    shuffle: false

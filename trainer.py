@@ -21,6 +21,7 @@ class TrainingConfig:
     learning_rate: float = 1e-4
     early_stopping_patience: int = 10
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    freeze_fe: bool = False  # Add freeze_fe parameter
 
     dataloader_config: dict = field(default_factory=lambda: {
         'batch_size': 4,
@@ -47,7 +48,8 @@ class TrainingConfig:
             logpath=training_config['logpath'],
             log_every_n_steps=training_config['log_every_n_steps'],
             save_every_n_epochs=training_config['save_every_n_epochs'],
-            dataloader_config=training_config['dataloader']
+            dataloader_config=training_config['dataloader'],
+            freeze_fe=training_config['freeze_fe']
         )
 
 class Trainer:
@@ -57,11 +59,16 @@ class Trainer:
         train_dataset : torch.utils.data.Dataset ,
         val_dataset : torch.utils.data.Dataset,
         config: TrainingConfig,
-        config_dict: Dict[str, Any]  # Add config_dict parameter
+        config_dict: Dict[str, Any]
     ):
         self.config = config
-        self.config_dict = config_dict  # Store the full config dictionary
+        self.config_dict = config_dict
         self.model = model.to(config.device)
+        
+        # Freeze feature extractor if specified
+        if config.freeze_fe:
+            self._freeze_feature_extractor()
+        
         self.train_loader = self._create_dataloader(train_dataset, is_train=True)
         self.val_loader = self._create_dataloader(val_dataset, is_train=False)
         
@@ -285,6 +292,13 @@ class Trainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': val_loss,
                 }, checkpoint_path)
+
+    def _freeze_feature_extractor(self):
+        """Freeze the feature extractor part of the model."""
+        # Assuming the feature extractor is the first part of the model
+        for param in self.model.feature_extractor.parameters():
+            param.requires_grad = False
+        print("Feature extractor has been frozen")
 
 if __name__ == '__main__':
     # Import required modules
